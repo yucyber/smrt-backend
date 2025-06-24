@@ -43,4 +43,5 @@ def check_server():
 
 if __name__ == '__main__':
     print("正在检查后端服务器状态...")
-    check_server() 
+    check_server()
+    print("hi")
