@@ -6,12 +6,15 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from flask_socketio import SocketIO
 
 from database import *
 from mail import mail
 from .auth import auth as auth_blueprint
 from .document import document as document_blueprint
 from .function import function as function_blueprint
+from .collaboration import collaboration as collaboration_blueprint
+from .collaboration.views import init_socketio_events
 from .auth.utils import create_default_users  # 导入创建默认用户的函数
 
 
@@ -132,10 +135,26 @@ def create_app():
             return jsonify({"message": "缺少令牌，但在开发模式下被接受", "code": "200"}), 200
         return jsonify({"message": f"缺少Token: {error}", "code": "401"}), 401
 
+    # 初始化 SocketIO
+    socketio = SocketIO(
+        app, 
+        cors_allowed_origins="*",  # 允许所有来源的跨域请求
+        async_mode='threading',  # 使用threading异步模式
+        logger=True,
+        engineio_logger=True
+    )
+    
+    # 初始化SocketIO事件处理器
+    init_socketio_events(socketio)
+    
+    # 将socketio实例存储到app中，供其他地方使用
+    app.socketio = socketio
+    
     # 注册蓝图 - 恢复原始路径（无/api前缀）
     app.register_blueprint(auth_blueprint, url_prefix='/auth')  # 注册蓝图
     app.register_blueprint(document_blueprint, url_prefix='/document')  # 注册蓝图
     app.register_blueprint(function_blueprint, url_prefix='/function')  # 注册蓝图
+    app.register_blueprint(collaboration_blueprint, url_prefix='/collaboration')  # 注册协同编辑蓝图
 
     # 初始化默认用户
     try:
