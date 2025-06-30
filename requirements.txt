@@ -11,4 +11,3 @@ flask_mail==0.10.0
 flask_redis==0.4.0
 gunicorn==23.0.0
 requests==2.32.4
-pytz==2025.2

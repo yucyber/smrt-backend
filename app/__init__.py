@@ -9,12 +9,6 @@ from flask_jwt_extended import JWTManager
 
 from database import *
 from mail import mail
-from .auth import auth as auth_blueprint
-from .document import document as document_blueprint
-from .function import function as function_blueprint
-from .knowledge_base.views import knowledge_base_bp
-from .auth.utils import create_default_users  # 导入创建默认用户的函数
-
 
 def create_app():
     app = Flask(__name__)
@@ -55,7 +49,7 @@ def create_app():
     # Redis 配置
     redis_uri = os.getenv('REDIS_DATABASE_URI')
     if not redis_uri:
-        redis_uri = 'redis://192.168.88.128:6379/0'
+        redis_uri = 'redis://localhost:6379/0'
         logging.warning(f"Redis URI未设置，使用默认配置: {redis_uri}")
     app.config['REDIS_URL'] = redis_uri
     
@@ -133,11 +127,21 @@ def create_app():
             return jsonify({"message": "缺少令牌，但在开发模式下被接受", "code": "200"}), 200
         return jsonify({"message": f"缺少Token: {error}", "code": "401"}), 401
 
+    # 导入蓝图
+    from .auth import auth as auth_blueprint
+    from .document import document as document_blueprint
+    from .function import function as function_blueprint
+    from .knowledge_base.views import knowledge_base_bp
+    from .auth.utils import create_default_users  # 导入创建默认用户的函数
+
     # 注册蓝图 - 恢复原始路径（无/api前缀）
     app.register_blueprint(auth_blueprint, url_prefix='/auth')  # 注册蓝图
     app.register_blueprint(document_blueprint, url_prefix='/document')  # 注册蓝图
     app.register_blueprint(function_blueprint, url_prefix='/function')  # 注册蓝图
-    app.register_blueprint(knowledge_base_bp) # 注册知识库蓝图
+    app.register_blueprint(knowledge_base_bp, url_prefix='/knowledge_base')  # 注册知识库蓝图
+    
+    # 记录蓝图注册信息
+    logging.info("已注册蓝图: auth, document, function, knowledge_base")
 
     # 初始化默认用户
     try:

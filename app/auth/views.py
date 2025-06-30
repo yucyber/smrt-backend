@@ -87,7 +87,7 @@ def login():
             return jsonify({'message': '密码错误！', 'code': 400})
         
         # 用户登录成功，生成 JWT
-        access_token = create_access_token(identity=str(user.id))
+        access_token = create_access_token(identity=user.id)
         logging.info(f"生成的访问令牌: {access_token[:20]}...")
         
         # 记录成功登录
