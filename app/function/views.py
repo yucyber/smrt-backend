@@ -1,6 +1,7 @@
 import os
 from time import sleep
 import base64
+import json
 import requests
 from dotenv import load_dotenv
 from flask import jsonify, request, Response
@@ -12,6 +13,11 @@ from . import function
 load_dotenv()
 erniebot.api_type = "aistudio"
 erniebot.access_token = os.getenv('ACCESS_TOKEN')
+
+# ChatGLM API配置
+CHATGLM_API_URL = os.getenv('CHATGLM_API_URL', 'https://open.bigmodel.cn/api/paas/v4/chat/completions')
+CHATGLM_API_KEY = os.getenv('CHATGLM_API_KEY', '填写key')
+# CHATGLM_API_SECRET = os.getenv('CHATGLM_API_SECRET', '')
 
 
 @function.route('/ocr', methods=['POST'])
@@ -151,3 +157,142 @@ def typography():
             yield f"{result}"
 
     return Response(generate(), content_type='text/event-stream')
+
+
+@function.route('/chatglm', methods=['POST'])
+# @jwt_required()
+def chatglm():
+    """
+    调用ChatGLM API的接口
+    请求格式：
+    {
+        "messages": [
+            {"role": "user", "content": "你好"}
+        ],
+        "model": "glm-4-flash",  # 可选，默认为glm-4-flash
+        "temperature": 0.7,      # 可选，默认为0.7
+        "top_p": 0.9,           # 可选，默认为0.9
+        "max_tokens": 1024      # 可选，默认为1024
+    }
+    响应格式：
+    {
+        "message": "AI回复的内容",
+        "code": 200
+    }
+    """
+    if not CHATGLM_API_KEY:
+        return jsonify({'message': 'ChatGLM API密钥未配置', 'code': 400})
+    
+    try:
+        data = request.get_json()
+        
+        # 获取请求参数，设置默认值
+        messages = data.get('messages', [])
+        model = data.get('model', 'glm-4-flash')
+        temperature = data.get('temperature', 0.7)
+        top_p = data.get('top_p', 0.9)
+        max_tokens = data.get('max_tokens', 1024)
+        
+        # 构建请求体
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens
+        }
+        
+        # 设置请求头
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {CHATGLM_API_KEY}"
+        }
+        
+        # 发送请求
+        response = requests.post(CHATGLM_API_URL, json=payload, headers=headers)
+        response.raise_for_status()
+        
+        # 解析响应
+        result = response.json()
+        ai_message = result.get('choices', [{}])[0].get('message', {}).get('content', '')
+        
+        return jsonify({'message': ai_message, 'code': 200})
+    
+    except Exception as e:
+        print(f"调用ChatGLM API时发生错误: {e}")
+        return jsonify({'message': f'调用ChatGLM API失败: {str(e)}', 'code': 500})
+
+
+@function.route('/chatglm/stream', methods=['POST'])
+# @jwt_required()
+def chatglm_stream():
+    """
+    调用ChatGLM API的流式响应接口
+    请求格式：
+    {
+        "messages": [
+            {"role": "user", "content": "你好"}
+        ],
+        "model": "glm-4-flash",  # 可选，默认为glm-4-flash
+        "temperature": 0.7,      # 可选，默认为0.7
+        "top_p": 0.9,           # 可选，默认为0.9
+        "max_tokens": 1024      # 可选，默认为1024
+    }
+    响应格式：
+    流式文本响应
+    """
+    if not CHATGLM_API_KEY:
+        return jsonify({'message': 'ChatGLM API密钥未配置', 'code': 400})
+    
+    try:
+        data = request.get_json()
+        
+        # 获取请求参数，设置默认值
+        messages = data.get('messages', [])
+        model = data.get('model', 'glm-4-flash')
+        temperature = data.get('temperature', 0.7)
+        top_p = data.get('top_p', 0.9)
+        max_tokens = data.get('max_tokens', 1024)
+        
+        # 构建请求体
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
+            "stream": True
+        }
+        
+        # 设置请求头
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {CHATGLM_API_KEY}"
+        }
+        
+        def generate():
+            # 发送请求
+            response = requests.post(CHATGLM_API_URL, json=payload, headers=headers, stream=True)
+            response.raise_for_status()
+            
+            # 处理流式响应
+            for line in response.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
+                        data = line[6:]
+                        if data == '[DONE]':
+                            break
+                        try:
+                            json_data = json.loads(data)
+                            content = json_data.get('choices', [{}])[0].get('delta', {}).get('content', '')
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            continue
+        
+        return Response(generate(), content_type='text/event-stream')
+    
+    except Exception as e:
+        print(f"调用ChatGLM API流式响应时发生错误: {e}")
+        return jsonify({'message': f'调用ChatGLM API流式响应失败: {str(e)}', 'code': 500})
