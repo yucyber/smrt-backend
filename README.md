@@ -46,14 +46,28 @@
 ### 配置环境变量
 在项目根目录创建并编辑`.env`文件，填写相应的变量值
 ```bash
+# 数据库配置
 SQLALCHEMY_DATABASE_URI = <your_mysql_uri>
 REDIS_DATABASE_URI = <your_redis_uri>
+
+# 邮件配置
 MAIL_USERNAME = <your_qqmail_number>
 MAIL_PASSWORD = <your_qqmail_server_password>
+
+# JWT配置
 JWT_SECRET = <any_secret>
+
+# 百度API配置
 ACCESS_TOKEN = <your_baidu_access_token>
 OCR_API_URL = <your_baidu_ocr_api_url>
+
+# ChatGLM API配置
+CHATGLM_API_URL = <your_chatglm_api_url>
+CHATGLM_API_KEY = <your_chatglm_api_key>
+CHATGLM_API_SECRET = <your_chatglm_api_secret>
 ```
+
+您也可以直接复制项目根目录下的`.env.example`文件并重命名为`.env`，然后填写相应的变量值。
 ### 安装依赖
 ```sh
 pip install -r requirements.txt
