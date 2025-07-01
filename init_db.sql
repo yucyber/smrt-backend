@@ -4,6 +4,7 @@ USE smart_editor;
 
 -- 删除表（如果存在）以确保干净的环境
 DROP TABLE IF EXISTS verification_codes;
+DROP TABLE IF EXISTS comments;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS users;
 
@@ -45,6 +46,27 @@ CREATE INDEX idx_documents_is_template ON documents(is_template);
 CREATE INDEX idx_documents_is_favorite ON documents(is_favorite);
 CREATE INDEX idx_documents_is_deleted ON documents(is_deleted);
 CREATE INDEX idx_documents_category ON documents(category);
+
+-- 创建评论表
+CREATE TABLE IF NOT EXISTS comments (
+    id VARCHAR(36) PRIMARY KEY,
+    document_id INT NOT NULL,
+    user_id INT NOT NULL,
+    text TEXT NOT NULL,
+    selected_text TEXT,
+    range_from INT NOT NULL,
+    range_to INT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 创建评论表索引
+CREATE INDEX idx_comments_document_id ON comments(document_id);
+CREATE INDEX idx_comments_user_id ON comments(user_id);
+CREATE INDEX idx_comments_is_deleted ON comments(is_deleted);
 
 -- 创建验证码表
 CREATE TABLE IF NOT EXISTS verification_codes (
@@ -159,4 +181,4 @@ SELECT 'Template documents', COUNT(*) FROM documents WHERE is_template = TRUE
 UNION
 SELECT 'Favorite documents', COUNT(*) FROM documents WHERE is_favorite = TRUE
 UNION
-SELECT 'Deleted documents', COUNT(*) FROM documents WHERE is_deleted = TRUE; 
+SELECT 'Deleted documents', COUNT(*) FROM documents WHERE is_deleted = TRUE;
