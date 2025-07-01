@@ -1,4 +1,5 @@
 import os
+import json  # 添加这一行
 from time import sleep
 import base64
 import requests
@@ -10,8 +11,10 @@ import erniebot
 from . import function
 
 load_dotenv()
-erniebot.api_type = "aistudio"
-erniebot.access_token = os.getenv('ACCESS_TOKEN')
+SILICONFLOW_API_KEY = os.getenv('SILICONFLOW_API_KEY')
+SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1/chat/completions"
+# erniebot.api_type = "aistudio"
+# erniebot.access_token = os.getenv('ACCESS_TOKEN')
 
 
 @function.route('/ocr', methods=['POST'])
@@ -75,7 +78,15 @@ def AIFunc():
     data = request.get_json()
     command = data['command']
     text = data['text']
-    if command == '续写':
+    if command == '文档摘要':
+        prompt = ("这是一份完整文档的内容：\n" + text +
+                  "\n请为这份文档生成一个简洁的摘要。摘要应该：\n"
+                  "1. 概括文档的主要内容和核心观点\n"
+                  "2. 突出重要信息和关键结论\n"
+                  "3. 保持客观中性的语调\n"
+                  "4. 长度控制在200-300字左右\n"
+                  "请直接返回摘要内容，不需要其他说明。")
+    elif command == '续写':
         prompt = ("这是从文档截取的一部分文本内容。\n" + text +
                   "\n请帮我续写这部分内容，保持原有的写作风格和语气。续写内容应连贯且自然，长度约为两段，每段不少于100字。"
                   "请确保续写部分与原文内容主题一致，并继续探讨相关话题。只需要续写内容，不需要返回其他内容。")
@@ -111,12 +122,53 @@ def AIFunc():
         prompt = f"请采用{data['tone']}的生成风格，{data['prompt']}" if data['tone'] else data['prompt']
 
     def generate():
-        response = erniebot.ChatCompletion.create(model="ernie-4.0",
-                                                  messages=[{"role": "user", "content": prompt}],
-                                                  stream=True)
-        for chunk in response:
-            result = chunk.get_result()
-            yield f"{result}"
+        headers = {
+            "Authorization": f"Bearer {SILICONFLOW_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "Qwen/Qwen2.5-7B-Instruct",  # 或选择其他免费模型
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+            "max_tokens": 2048,
+            "temperature": 0.7
+        }
+        
+        try:
+            response = requests.post(SILICONFLOW_BASE_URL, 
+                                   headers=headers, 
+                                   json=payload, 
+                                   stream=True,
+                                   timeout=30)
+            
+            if response.status_code != 200:
+                yield f"错误: API调用失败，状态码: {response.status_code}"
+                return
+            
+            for line in response.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
+                        if line.strip() == 'data: [DONE]':
+                            break
+                        try:
+                            json_data = json.loads(line[6:])
+                            if 'choices' in json_data and len(json_data['choices']) > 0:
+                                delta = json_data['choices'][0].get('delta', {})
+                                content = delta.get('content', '')
+                                if content:
+                                    yield f"{content}"
+                        except json.JSONDecodeError:
+                            continue
+                        except Exception as e:
+                            print(f"处理响应时发生错误: {e}")
+                            continue
+                            
+        except requests.exceptions.RequestException as e:
+            yield f"网络请求错误: {str(e)}"
+        except Exception as e:
+            yield f"处理请求时发生错误: {str(e)}"
 
     return Response(generate(), content_type='text/event-stream')
 
@@ -143,11 +195,42 @@ def typography():
     )
 
     def generate():
-        response = erniebot.ChatCompletion.create(model="ernie-4.0",
-                                                  messages=[{"role": "user", "content": prompt}],
-                                                  stream=True)
-        for chunk in response:
-            result = chunk.get_result()
-            yield f"{result}"
+        headers = {
+            "Authorization": f"Bearer {SILICONFLOW_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+            "max_tokens": 2048,
+            "temperature": 0.7
+        }
+        
+        try:
+            response = requests.post(SILICONFLOW_BASE_URL, 
+                                   headers=headers, 
+                                   json=payload, 
+                                   stream=True,
+                                   timeout=30)
+            
+            for line in response.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
+                        if line.strip() == 'data: [DONE]':
+                            break
+                        try:
+                            json_data = json.loads(line[6:])
+                            if 'choices' in json_data:
+                                content = json_data['choices'][0]['delta'].get('content', '')
+                                if content:
+                                    yield f"{content}"
+                        except:
+                            continue
+                            
+        except Exception as e:
+            yield f"处理请求时发生错误: {str(e)}"
 
     return Response(generate(), content_type='text/event-stream')
