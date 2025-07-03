@@ -4,6 +4,7 @@ USE smart_editor;
 
 -- 删除表（如果存在）以确保干净的环境
 DROP TABLE IF EXISTS verification_codes;
+DROP TABLE IF EXISTS document_versions;
 DROP TABLE IF EXISTS comments;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS users;
@@ -67,6 +68,28 @@ CREATE TABLE IF NOT EXISTS comments (
 CREATE INDEX idx_comments_document_id ON comments(document_id);
 CREATE INDEX idx_comments_user_id ON comments(user_id);
 CREATE INDEX idx_comments_is_deleted ON comments(is_deleted);
+
+-- 创建文档版本历史表
+CREATE TABLE IF NOT EXISTS document_versions (
+    id VARCHAR(36) PRIMARY KEY,
+    document_id INT NOT NULL,
+    user_id INT NOT NULL,
+    version_number INT NOT NULL,
+    content MEDIUMTEXT NOT NULL COMMENT '版本内容，使用HTML格式存储',
+    summary VARCHAR(255) DEFAULT '' COMMENT '版本摘要或备注',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    is_current BOOLEAN DEFAULT FALSE COMMENT '是否为当前版本',
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_document_version (document_id, version_number)
+);
+
+-- 创建文档版本表索引
+CREATE INDEX idx_document_versions_document_id ON document_versions(document_id);
+CREATE INDEX idx_document_versions_user_id ON document_versions(user_id);
+CREATE INDEX idx_document_versions_is_current ON document_versions(is_current);
+CREATE INDEX idx_document_versions_created_at ON document_versions(created_at);
+CREATE INDEX idx_document_versions_version_number ON document_versions(document_id, version_number);
 
 -- 创建验证码表
 CREATE TABLE IF NOT EXISTS verification_codes (
@@ -161,6 +184,24 @@ VALUES
 ('test@example.com', '123456', NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE), FALSE),
 ('user@test.com', '654321', DATE_SUB(NOW(), INTERVAL 10 MINUTE), DATE_SUB(NOW(), INTERVAL 5 MINUTE), TRUE);
 
+-- 创建文档版本历史示例数据
+INSERT INTO document_versions (id, document_id, user_id, version_number, content, summary, created_at, is_current)
+VALUES
+-- 为"我的第一个文档"创建版本历史
+(UUID(), 1, 3, 1, '<h1>我的第一个文档</h1><p>这是初始版本的内容。</p>', '初始版本', DATE_SUB(NOW(), INTERVAL 5 DAY), FALSE),
+(UUID(), 1, 3, 2, '<h1>我的第一个文档</h1><p>这是初始版本的内容。</p><p>添加了一些新内容。</p>', '添加新内容', DATE_SUB(NOW(), INTERVAL 3 DAY), FALSE),
+(UUID(), 1, 3, 3, '<h1>我的第一个文档</h1><p>这是我创建的第一个文档，用于测试系统功能。</p><p>可以在这里编辑更多内容...</p>', '当前版本', NOW(), TRUE),
+
+-- 为"工作计划"创建版本历史
+(UUID(), 2, 3, 1, '<h1>2023年工作计划</h1><h2>第一季度</h2><ul><li>完成项目A的需求分析</li></ul>', '初始计划', DATE_SUB(NOW(), INTERVAL 7 DAY), FALSE),
+(UUID(), 2, 3, 2, '<h1>2023年工作计划</h1><h2>第一季度</h2><ul><li>完成项目A的需求分析</li><li>开始项目B的研发</li></ul><h2>第二季度</h2><ul><li>完成项目B的开发</li><li>项目A进入测试阶段</li></ul><h2>下半年计划</h2><p>待定...</p>', '当前版本', NOW(), TRUE),
+
+-- 为"学习笔记"创建版本历史
+(UUID(), 4, 4, 1, '<h1>JavaScript高级特性</h1><h2>Promise</h2><p>Promise用于处理异步操作...</p>', '初始版本', DATE_SUB(NOW(), INTERVAL 6 DAY), FALSE),
+(UUID(), 4, 4, 2, '<h1>JavaScript高级特性</h1><h2>Promise</h2><pre><code>const promise = new Promise((resolve, reject) => {
+  // 异步操作
+});</code></pre><p>Promise用于处理异步操作，可以避免回调地狱问题...</p><h2>async/await</h2><p>ES2017引入的新特性，使异步代码看起来像同步代码...</p>', '当前版本', NOW(), TRUE);
+
 -- 显示创建的表结构
 SHOW TABLES;
 
@@ -172,6 +213,11 @@ SELECT id, user_id, title, LEFT(content, 30) as content_preview, created_at, upd
        is_favorite, is_deleted, is_template, category, word_count 
 FROM documents;
 
+-- 显示文档版本表数据
+SELECT id, document_id, user_id, version_number, LEFT(content, 30) as content_preview, 
+       summary, created_at, is_current 
+FROM document_versions;
+
 -- 汇总信息
 SELECT 'Total users' as info, COUNT(*) as count FROM users
 UNION
@@ -181,4 +227,8 @@ SELECT 'Template documents', COUNT(*) FROM documents WHERE is_template = TRUE
 UNION
 SELECT 'Favorite documents', COUNT(*) FROM documents WHERE is_favorite = TRUE
 UNION
-SELECT 'Deleted documents', COUNT(*) FROM documents WHERE is_deleted = TRUE;
+SELECT 'Deleted documents', COUNT(*) FROM documents WHERE is_deleted = TRUE
+UNION
+SELECT 'Total document versions', COUNT(*) FROM document_versions
+UNION
+SELECT 'Current versions', COUNT(*) FROM document_versions WHERE is_current = TRUE;
