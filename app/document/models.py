@@ -53,3 +53,32 @@ class DocumentVersions(db.Model):
             'is_current': self.is_current,
             'author': 'User'  # 可以后续扩展为真实用户名
         }
+
+
+class DocumentShare(db.Model):
+    """文档分享表"""
+    __tablename__ = 'document_shares'
+    
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)  # 分享者ID
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.timezone('Asia/Shanghai')), nullable=False)
+    share_token = db.Column(db.String(64), default=lambda: str(uuid.uuid4()), nullable=False)  # 添加分享令牌字段
+    
+    # 建立关系
+    document = db.relationship('Documents', backref=db.backref('shares', lazy=True, cascade='all, delete-orphan'))
+    owner = db.relationship('Users', backref=db.backref('shared_documents', lazy=True))
+    
+    def __repr__(self):
+        return f'<DocumentShare {self.document_id}>'
+    
+    def to_dict(self):
+        """转换为字典格式，用于API返回"""
+        return {
+            'id': self.id,
+            'document_id': self.document_id,
+            'owner_id': self.owner_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'share_token': self.share_token,
+            'share_link': f"/edit/{self.document_id}?share={self.id}"
+        }

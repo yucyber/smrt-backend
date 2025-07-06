@@ -5,6 +5,7 @@ USE smart_editor;
 -- 删除表（如果存在）以确保干净的环境
 DROP TABLE IF EXISTS verification_codes;
 DROP TABLE IF EXISTS document_versions;
+DROP TABLE IF EXISTS document_shares;
 DROP TABLE IF EXISTS comments;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS users;
@@ -104,6 +105,22 @@ CREATE TABLE IF NOT EXISTS verification_codes (
 -- 创建索引
 CREATE INDEX idx_verification_codes_email ON verification_codes(email);
 CREATE INDEX idx_verification_codes_expires ON verification_codes(expires_at);
+
+-- 创建文档分享表
+CREATE TABLE IF NOT EXISTS document_shares (
+    id VARCHAR(36) PRIMARY KEY,
+    document_id INT NOT NULL,
+    owner_id INT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    share_token VARCHAR(64) NOT NULL,
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 创建文档分享表索引
+CREATE INDEX idx_document_shares_document_id ON document_shares(document_id);
+CREATE INDEX idx_document_shares_owner_id ON document_shares(owner_id);
+CREATE INDEX idx_document_shares_created_at ON document_shares(created_at);
 
 -- 创建初始管理员用户（专门用于系统管理）
 INSERT INTO users (id, username, password_hash, email, role)

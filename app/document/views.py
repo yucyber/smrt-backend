@@ -10,7 +10,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_req
 
 from database import db, redis_client
 from . import document
-from .models import Documents, DocumentVersions
+from .models import Documents, DocumentVersions, DocumentShare
 
 
 # 自定义JSON编码器，用于处理datetime对象
@@ -168,9 +168,21 @@ def update_document(document_id):
         if not data:
             return jsonify({'message': '请求数据不能为空!', 'code': '400'})
         
-        # 验证文档是否存在且用户有权限访问
-        doc = Documents.query.filter_by(id=document_id, user_id=user_id).first()
+        # 验证文档是否存在
+        doc = Documents.query.get(document_id)
         if doc is None:
+            return jsonify({'message': '文档不存在!', 'code': '404'})
+        
+        # 检查用户是否有权限访问文档
+        # 1. 用户是文档所有者
+        is_owner = doc.user_id == user_id
+        # 2. 用户通过分享链接访问（检查是否存在分享记录）
+        share_exists = False
+        if not is_owner:
+            share_exists = DocumentShare.query.filter_by(document_id=document_id).first() is not None
+        
+        # 如果既不是所有者也没有分享记录，则拒绝访问
+        if not is_owner and not share_exists:
             return jsonify({'message': '文档不存在或无权限访问!', 'code': '404'})
         
         # 获取更新数据
@@ -336,6 +348,80 @@ def get_document_template():
     return jsonify({'documents': [doc.to_dict() for doc in docs], 'code': '200'})
 
 
+# 分享文档
+@document.route('/<int:document_id>/share', methods=['POST'])
+@jwt_required()
+def share_document(document_id):
+    """创建文档分享链接"""
+    try:
+        user_id = get_jwt_identity()
+        
+        # 验证文档是否存在且用户有权限访问
+        doc = Documents.query.filter_by(id=document_id, user_id=user_id).first()
+        if not doc:
+            return jsonify({'message': '文档不存在或无权限访问!', 'code': '404'}), 404
+        
+        # 检查是否已经存在分享
+        existing_share = DocumentShare.query.filter_by(document_id=document_id, owner_id=user_id).first()
+        if existing_share:
+            return jsonify({
+                'message': '分享链接已存在!', 
+                'code': '200',
+                'share': existing_share.to_dict()
+            })
+        
+        # 创建新的分享记录
+        new_share = DocumentShare(
+            document_id=document_id,
+            owner_id=user_id,
+            share_token=str(uuid.uuid4())  # 显式设置分享令牌
+        )
+        
+        db.session.add(new_share)
+        db.session.commit()
+        
+        return jsonify({
+            'message': '文档分享成功!', 
+            'code': '200',
+            'share': new_share.to_dict()
+        })
+        
+    except Exception as e:
+        logging.error(f"分享文档失败: {str(e)}")
+        logging.error(traceback.format_exc())
+        db.session.rollback()
+        return jsonify({'message': '分享文档失败!', 'code': '500'}), 500
+
+
+# 获取分享文档
+@document.route('/share/<string:share_id>', methods=['GET'])
+def get_shared_document(share_id):
+    """获取分享的文档"""
+    try:
+        # 查找分享记录
+        share = DocumentShare.query.filter_by(id=share_id).first()
+        if not share:
+            return jsonify({'message': '分享链接不存在或已失效!', 'code': '404'}), 404
+        
+        # 获取文档
+        doc = Documents.query.get(share.document_id)
+        if not doc:
+            return jsonify({'message': '文档不存在!', 'code': '404'}), 404
+        
+        return jsonify({
+            'document': doc.to_dict(), 
+            'code': '200',
+            'share_info': {
+                'owner_id': share.owner_id
+            }
+        })
+        
+    except Exception as e:
+        logging.error(f"获取分享文档失败: {str(e)}")
+        logging.error(traceback.format_exc())
+        return jsonify({'message': '获取分享文档失败!', 'code': '500'}), 500
+
+
 # 根据用户的查询参数进行模糊查询
 @document.route('/search/<string:title>', methods=['GET'])
 @jwt_required()
@@ -400,9 +486,21 @@ def get_document_versions(document_id):
     try:
         user_id = get_jwt_identity()
         
-        # 验证文档是否存在且用户有权限访问
-        doc = Documents.query.filter_by(id=document_id, user_id=user_id).first()
+        # 验证文档是否存在
+        doc = Documents.query.get(document_id)
         if not doc:
+            return jsonify({'message': '文档不存在!', 'code': '404'}), 404
+            
+        # 检查用户是否有权限访问文档
+        # 1. 用户是文档所有者
+        is_owner = doc.user_id == user_id
+        # 2. 用户通过分享链接访问（检查是否存在分享记录）
+        share_exists = False
+        if not is_owner:
+            share_exists = DocumentShare.query.filter_by(document_id=document_id).first() is not None
+        
+        # 如果既不是所有者也没有分享记录，则拒绝访问
+        if not is_owner and not share_exists:
             return jsonify({'message': '文档不存在或无权限访问!', 'code': '404'}), 404
         
         # 获取该文档的所有版本，按版本号倒序排列
@@ -435,9 +533,21 @@ def create_document_version(document_id):
         if not data:
             return jsonify({'message': '请求数据不能为空!', 'code': '400'}), 400
         
-        # 验证文档是否存在且用户有权限访问
-        doc = Documents.query.filter_by(id=document_id, user_id=user_id).first()
+        # 验证文档是否存在
+        doc = Documents.query.get(document_id)
         if not doc:
+            return jsonify({'message': '文档不存在!', 'code': '404'}), 404
+            
+        # 检查用户是否有权限访问文档
+        # 1. 用户是文档所有者
+        is_owner = doc.user_id == user_id
+        # 2. 用户通过分享链接访问（检查是否存在分享记录）
+        share_exists = False
+        if not is_owner:
+            share_exists = DocumentShare.query.filter_by(document_id=document_id).first() is not None
+        
+        # 如果既不是所有者也没有分享记录，则拒绝访问
+        if not is_owner and not share_exists:
             return jsonify({'message': '文档不存在或无权限访问!', 'code': '404'}), 404
         
         # 获取必要的字段
@@ -505,9 +615,21 @@ def restore_document_version(document_id):
         
         version_id = data['version_id']
         
-        # 验证文档是否存在且用户有权限访问
-        doc = Documents.query.filter_by(id=document_id, user_id=user_id).first()
+        # 验证文档是否存在
+        doc = Documents.query.get(document_id)
         if not doc:
+            return jsonify({'message': '文档不存在!', 'code': '404'}), 404
+            
+        # 检查用户是否有权限访问文档
+        # 1. 用户是文档所有者
+        is_owner = doc.user_id == user_id
+        # 2. 用户通过分享链接访问（检查是否存在分享记录）
+        share_exists = False
+        if not is_owner:
+            share_exists = DocumentShare.query.filter_by(document_id=document_id).first() is not None
+        
+        # 如果既不是所有者也没有分享记录，则拒绝访问
+        if not is_owner and not share_exists:
             return jsonify({'message': '文档不存在或无权限访问!', 'code': '404'}), 404
         
         # 查找目标版本
@@ -566,9 +688,21 @@ def delete_document_version(document_id, version_id):
     try:
         user_id = get_jwt_identity()
         
-        # 验证文档是否存在且用户有权限访问
-        doc = Documents.query.filter_by(id=document_id, user_id=user_id).first()
+        # 验证文档是否存在
+        doc = Documents.query.get(document_id)
         if not doc:
+            return jsonify({'message': '文档不存在!', 'code': '404'}), 404
+            
+        # 检查用户是否有权限访问文档
+        # 1. 用户是文档所有者
+        is_owner = doc.user_id == user_id
+        # 2. 用户通过分享链接访问（检查是否存在分享记录）
+        share_exists = False
+        if not is_owner:
+            share_exists = DocumentShare.query.filter_by(document_id=document_id).first() is not None
+        
+        # 如果既不是所有者也没有分享记录，则拒绝访问
+        if not is_owner and not share_exists:
             return jsonify({'message': '文档不存在或无权限访问!', 'code': '404'}), 404
         
         # 查找目标版本
