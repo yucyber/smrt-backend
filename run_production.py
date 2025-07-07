@@ -10,7 +10,7 @@ app = create_app()
 # 简单的首页路由
 @app.route('/')
 def index():
-    return '妙笔智能编辑器后端服务 - 生产模式'
+    return '妙笔后端服务 - 生产模式'
 
 # 配置信息路由
 @app.route('/api/status')
